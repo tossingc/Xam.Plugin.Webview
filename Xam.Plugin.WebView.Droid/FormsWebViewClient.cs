@@ -56,33 +56,34 @@ namespace Xam.Plugin.WebView.Droid
 
         //For Android < 5.0
         [Obsolete]
-        public override WebResourceResponse ShouldInterceptRequest(Android.Webkit.WebView view, string url)
+        public override bool ShouldOverrideUrlLoading(Android.Webkit.WebView view, string url)
         {
-            if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.Lollipop) goto EndShouldInterceptRequest;
+            if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.Lollipop) goto EndShouldOverrideUrlLoading;
 
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldInterceptRequest;
-            if (renderer.Element == null) goto EndShouldInterceptRequest;
+            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldOverrideUrlLoading;
+            if (renderer.Element == null) goto EndShouldOverrideUrlLoading;
 
             var response = renderer.Element.HandleNavigationStartRequest(url);
 
             HandleDecisionHandlerDelegateResponse(view, url, response);
 
-            EndShouldInterceptRequest:
-            return base.ShouldInterceptRequest(view, url);
+            EndShouldOverrideUrlLoading:
+            return base.ShouldOverrideUrlLoading(view, url);
         }
 
-        public override WebResourceResponse ShouldInterceptRequest(Android.Webkit.WebView view, IWebResourceRequest request)
+        // NOTE: pulled fix from this unmerged PR - https://github.com/SKLn-Rad/Xam.Plugin.Webview/pull/104
+        public override bool ShouldOverrideUrlLoading(Android.Webkit.WebView view, IWebResourceRequest request)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldInterceptRequest;
-            if (renderer.Element == null) goto EndShouldInterceptRequest;
+            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldOverrideUrlLoading;
+            if (renderer.Element == null) goto EndShouldOverrideUrlLoading;
 
             var url = request.Url.ToString();
             var response = renderer.Element.HandleNavigationStartRequest(url);
 
             HandleDecisionHandlerDelegateResponse(view, url, response);
 
-            EndShouldInterceptRequest:
-            return base.ShouldInterceptRequest(view, request);
+            EndShouldOverrideUrlLoading:
+            return base.ShouldOverrideUrlLoading(view, request);
         }
 
         void CheckResponseValidity(Android.Webkit.WebView view, string url)
