@@ -58,38 +58,30 @@ namespace Xam.Plugin.WebView.Droid
         [Obsolete]
         public override bool ShouldOverrideUrlLoading(Android.Webkit.WebView view, string url)
         {
-            if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.Lollipop) goto EndShouldOverrideUrlLoading;
+            CheckResponseValidity(view, url);
 
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldOverrideUrlLoading;
-            if (renderer.Element == null) goto EndShouldOverrideUrlLoading;
-
-            var response = renderer.Element.HandleNavigationStartRequest(url);
-
-            HandleDecisionHandlerDelegateResponse(view, url, response);
-
-            EndShouldOverrideUrlLoading:
             return base.ShouldOverrideUrlLoading(view, url);
         }
 
         // NOTE: pulled fix from this unmerged PR - https://github.com/SKLn-Rad/Xam.Plugin.Webview/pull/104
         public override bool ShouldOverrideUrlLoading(Android.Webkit.WebView view, IWebResourceRequest request)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldOverrideUrlLoading;
-            if (renderer.Element == null) goto EndShouldOverrideUrlLoading;
+            CheckResponseValidity(view, request.Url.ToString());
 
-            var url = request.Url.ToString();
-            var response = renderer.Element.HandleNavigationStartRequest(url);
-
-            HandleDecisionHandlerDelegateResponse(view, url, response);
-
-            EndShouldOverrideUrlLoading:
             return base.ShouldOverrideUrlLoading(view, request);
         }
 
         void CheckResponseValidity(Android.Webkit.WebView view, string url)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer))
+            {
+                return;
+            }
+
+            if (renderer.Element == null)
+            {
+                return;
+            }
 
             var response = renderer.Element.HandleNavigationStartRequest(url);
 
