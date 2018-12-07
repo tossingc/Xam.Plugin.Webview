@@ -1,4 +1,5 @@
-﻿using Android.OS;
+﻿using Android.Content;
+using Android.OS;
 using Android.Webkit;
 using System;
 using System.Collections.Generic;
@@ -31,6 +32,11 @@ namespace Xam.Plugin.WebView.Droid
         public static event EventHandler<Android.Webkit.WebView> OnControlChanged;
 
         JavascriptValueCallback _callback;
+
+        protected FormsWebViewRenderer(Context context)
+            : base(context)
+        {
+        }
 
         public static void Initialize()
         {
@@ -82,7 +88,7 @@ namespace Xam.Plugin.WebView.Droid
 
         void SetupControl()
         {
-            var webView = new Android.Webkit.WebView(Forms.Context);
+            var webView = new Android.Webkit.WebView(Context);
             _callback = new JavascriptValueCallback(this);
 
             // https://github.com/SKLn-Rad/Xam.Plugin.WebView.Webview/issues/11

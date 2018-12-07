@@ -5,6 +5,11 @@
              Title="String Data"
              x:Class="SampleApp.Samples.StringDataSample">
 
-    <webview:FormsWebView x:Name="stringContent" ContentType="StringData" />
+    <webview:FormsWebView
+        x:Name="stringContent"
+        ContentType="StringData"
+        
+        OnNavigationStarted="FormsWebView_OnNavigationStarted"
+        />
 
 </ContentPage>

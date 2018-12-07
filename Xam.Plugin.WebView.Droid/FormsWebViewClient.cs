@@ -13,7 +13,14 @@ namespace Xam.Plugin.WebView.Droid
     public class FormsWebViewClient : WebViewClient
     {
 
-        readonly WeakReference<FormsWebViewRenderer> Reference;
+        private WeakReference<FormsWebViewRenderer> Reference { get; }
+
+        private FormsWebViewRenderer Renderer =>
+            Reference == null || !Reference.TryGetTarget(out var renderer)
+                ? null
+                : renderer;
+
+        private FormsWebView Element => Renderer?.Element;
 
         public FormsWebViewClient(FormsWebViewRenderer renderer)
         {
@@ -22,22 +29,22 @@ namespace Xam.Plugin.WebView.Droid
 
         public override void OnReceivedHttpError(Android.Webkit.WebView view, IWebResourceRequest request, WebResourceResponse errorResponse)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            var element = Element;
+            if (element == null) return;
 
-            renderer.Element.HandleNavigationError(errorResponse.StatusCode);
-            renderer.Element.HandleNavigationCompleted(request.Url.ToString());
-            renderer.Element.Navigating = false;
+            element.HandleNavigationError(errorResponse.StatusCode);
+            element.HandleNavigationCompleted(request.Url.ToString());
+            element.Navigating = false;
         }
 
         public override void OnReceivedError(Android.Webkit.WebView view, IWebResourceRequest request, WebResourceError error)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            var element = Element;
+            if (element == null) return;
 
-            renderer.Element.HandleNavigationError((int) error.ErrorCode);
-            renderer.Element.HandleNavigationCompleted(request.Url.ToString());
-            renderer.Element.Navigating = false;
+            element.HandleNavigationError((int) error.ErrorCode);
+            element.HandleNavigationCompleted(request.Url.ToString());
+            element.Navigating = false;
         }
 
         //For Android < 5.0
@@ -46,12 +53,12 @@ namespace Xam.Plugin.WebView.Droid
         {
             if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.Lollipop) return;
 
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            var element = Element;
+            if (element == null) return;
 
-            renderer.Element.HandleNavigationError((int)errorCode);
-            renderer.Element.HandleNavigationCompleted(failingUrl.ToString());
-            renderer.Element.Navigating = false;
+            element.HandleNavigationError((int)errorCode);
+            element.HandleNavigationCompleted(failingUrl.ToString());
+            element.Navigating = false;
         }
 
         //For Android < 5.0
@@ -73,17 +80,10 @@ namespace Xam.Plugin.WebView.Droid
 
         void CheckResponseValidity(Android.Webkit.WebView view, string url)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer))
-            {
-                return;
-            }
+            var element = Element;
+            if (element == null) return;
 
-            if (renderer.Element == null)
-            {
-                return;
-            }
-
-            var response = renderer.Element.HandleNavigationStartRequest(url);
+            var response = element.HandleNavigationStartRequest(url);
 
             HandleDecisionHandlerDelegateResponse(view, url, response);
         }
@@ -122,10 +122,10 @@ namespace Xam.Plugin.WebView.Droid
 
         public override void OnPageStarted(Android.Webkit.WebView view, string url, Bitmap favicon)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            var element = Element;
+            if (element == null) return;
 
-            renderer.Element.Navigating = true;
+            element.Navigating = true;
         }
 
         bool AttemptToHandleCustomUrlScheme(Android.Webkit.WebView view, string url)
@@ -142,8 +142,8 @@ namespace Xam.Plugin.WebView.Droid
                 email.PutExtra(Intent.ExtraCc, emailData.Cc);
                 email.PutExtra(Intent.ExtraText, emailData.Body);
 
-                if (email.ResolveActivity(Forms.Context.PackageManager) != null)
-                    Forms.Context.StartActivity(email);
+                if (email.ResolveActivity(Renderer.Context.PackageManager) != null)
+                    Renderer.Context.StartActivity(email);
 
                 return true;
             }
@@ -151,8 +151,8 @@ namespace Xam.Plugin.WebView.Droid
             if (url.StartsWith("http"))
             {
                 Intent webPage = new Intent(Intent.ActionView, Android.Net.Uri.Parse(url));
-                if (webPage.ResolveActivity(Forms.Context.PackageManager) != null)
-                    Forms.Context.StartActivity(webPage);
+                if (webPage.ResolveActivity(Renderer.Context.PackageManager) != null)
+                    Renderer.Context.StartActivity(webPage);
 
                 return true;
             }
@@ -162,8 +162,8 @@ namespace Xam.Plugin.WebView.Droid
 
         public override void OnReceivedSslError(Android.Webkit.WebView view, SslErrorHandler handler, SslError error)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            var element = Element;
+            if (element == null) return;
 
             if (FormsWebViewRenderer.IgnoreSSLGlobally)
             {
@@ -173,33 +173,34 @@ namespace Xam.Plugin.WebView.Droid
             else
             {
                 handler.Cancel();
-                renderer.Element.Navigating = false;
+                element.Navigating = false;
             }
         }
 
-        public async override void OnPageFinished(Android.Webkit.WebView view, string url)
+        public override async void OnPageFinished(Android.Webkit.WebView view, string url)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            var renderer = Renderer;
+            var element = Renderer?.Element;
+            if (element == null) return;
 
             // Add Injection Function
             await renderer.OnJavascriptInjectionRequest(FormsWebView.InjectedFunction);
 
             // Add Global Callbacks
-            if (renderer.Element.EnableGlobalCallbacks)
+            if (element.EnableGlobalCallbacks)
                 foreach (var callback in FormsWebView.GlobalRegisteredCallbacks)
                     await renderer.OnJavascriptInjectionRequest(FormsWebView.GenerateFunctionScript(callback.Key));
 
             // Add Local Callbacks
-            foreach (var callback in renderer.Element.LocalRegisteredCallbacks)
+            foreach (var callback in element.LocalRegisteredCallbacks)
                 await renderer.OnJavascriptInjectionRequest(FormsWebView.GenerateFunctionScript(callback.Key));
 
-            renderer.Element.CanGoBack = view.CanGoBack();
-            renderer.Element.CanGoForward = view.CanGoForward();
-            renderer.Element.Navigating = false;
+            element.CanGoBack = view.CanGoBack();
+            element.CanGoForward = view.CanGoForward();
+            element.Navigating = false;
 
-            renderer.Element.HandleNavigationCompleted(url);
-            renderer.Element.HandleContentLoaded();
+            element.HandleNavigationCompleted(url);
+            element.HandleContentLoaded();
         }
     }
 }
