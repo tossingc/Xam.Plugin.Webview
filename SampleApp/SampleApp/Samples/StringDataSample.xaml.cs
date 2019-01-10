@@ -12,7 +12,7 @@ namespace SampleApp.Samples
             stringContent.Source = @"
 <!doctype html>
 <html>
-    <body><h1>This is a HTML string</h1></body>
+    <body contenteditable='true'><h1>This is a HTML string</h1></body>
 </html>
             ";
         }
