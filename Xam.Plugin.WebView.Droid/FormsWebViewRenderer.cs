@@ -15,7 +15,7 @@ using Xamarin.Forms.Platform.Android;
 [assembly: ExportRenderer(typeof(FormsWebView), typeof(FormsWebViewRenderer))]
 namespace Xam.Plugin.WebView.Droid
 {
-    public class FormsWebViewRenderer : ViewRenderer<FormsWebView, Android.Webkit.WebView>
+    public class FormsWebViewRenderer : ViewRenderer<FormsWebView, WebViewEx>
     {
 
         public static string MimeType = "text/html";
@@ -82,7 +82,7 @@ namespace Xam.Plugin.WebView.Droid
 
         void SetupControl()
         {
-            var webView = new Android.Webkit.WebView(Forms.Context);
+            var webView = new WebViewEx(Forms.Context);
             _callback = new JavascriptValueCallback(this);
 
             // https://github.com/SKLn-Rad/Xam.Plugin.WebView.Webview/issues/11
