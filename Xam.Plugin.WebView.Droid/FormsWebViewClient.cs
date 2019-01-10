@@ -1,5 +1,5 @@
 ﻿using System;
-
+using System.Threading;
 using Android.Webkit;
 using Android.Net.Http;
 using Android.Graphics;
@@ -56,70 +56,68 @@ namespace Xam.Plugin.WebView.Droid
 
         //For Android < 5.0
         [Obsolete]
-        public override WebResourceResponse ShouldInterceptRequest(Android.Webkit.WebView view, string url)
+        public override bool ShouldOverrideUrlLoading(Android.Webkit.WebView view, string url)
         {
-            if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.Lollipop) goto EndShouldInterceptRequest;
+            CheckResponseValidity(view, url);
 
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldInterceptRequest;
-            if (renderer.Element == null) goto EndShouldInterceptRequest;
-
-            var response = renderer.Element.HandleNavigationStartRequest(url);
-
-            if (response.Cancel || response.OffloadOntoDevice)
-            {
-                Device.BeginInvokeOnMainThread(() =>
-                {
-                    if (response.OffloadOntoDevice)
-                        AttemptToHandleCustomUrlScheme(view, url);
-
-                    view.StopLoading();
-                });
-            }
-
-            EndShouldInterceptRequest:
-            return base.ShouldInterceptRequest(view, url);
+            return base.ShouldOverrideUrlLoading(view, url);
         }
 
-        public override WebResourceResponse ShouldInterceptRequest(Android.Webkit.WebView view, IWebResourceRequest request)
+        // NOTE: pulled fix from this unmerged PR - https://github.com/SKLn-Rad/Xam.Plugin.Webview/pull/104
+        public override bool ShouldOverrideUrlLoading(Android.Webkit.WebView view, IWebResourceRequest request)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) goto EndShouldInterceptRequest;
-            if (renderer.Element == null) goto EndShouldInterceptRequest;
+            CheckResponseValidity(view, request.Url.ToString());
 
-            string url = request.Url.ToString();
-            var response = renderer.Element.HandleNavigationStartRequest(url);
-
-            if (response.Cancel || response.OffloadOntoDevice)
-            {
-                Device.BeginInvokeOnMainThread(() =>
-                {
-                    if (response.OffloadOntoDevice)
-                        AttemptToHandleCustomUrlScheme(view, url);
-
-                    view.StopLoading();
-                });
-            }
-
-            EndShouldInterceptRequest:
-            return base.ShouldInterceptRequest(view, request);
+            return base.ShouldOverrideUrlLoading(view, request);
         }
 
         void CheckResponseValidity(Android.Webkit.WebView view, string url)
         {
-            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer)) return;
-            if (renderer.Element == null) return;
+            if (Reference == null || !Reference.TryGetTarget(out FormsWebViewRenderer renderer))
+            {
+                return;
+            }
+
+            if (renderer.Element == null)
+            {
+                return;
+            }
 
             var response = renderer.Element.HandleNavigationStartRequest(url);
 
-            if (response.Cancel || response.OffloadOntoDevice)
-            {
-                Device.BeginInvokeOnMainThread(() =>
-                {
-                    if (response.OffloadOntoDevice)
-                        AttemptToHandleCustomUrlScheme(view, url);
+            HandleDecisionHandlerDelegateResponse(view, url, response);
+        }
 
-                    view.StopLoading();
-                });
+        private void HandleDecisionHandlerDelegateResponse(Android.Webkit.WebView view, string url, Abstractions.Delegates.DecisionHandlerDelegate response)
+        {
+            if (!response.Cancel && !response.OffloadOntoDevice)
+            {
+                return;
             }
+
+            var finishedManualResetEvent = new ManualResetEvent(false);
+            void CancelOrOffloadOntoDevice()
+            {
+                if (response.OffloadOntoDevice && !AttemptToHandleCustomUrlScheme(view, url))
+                {
+                    Device.OpenUri(new Uri(url));
+                }
+
+                view.StopLoading();
+
+                finishedManualResetEvent.Set();
+            }
+
+            if (Device.IsInvokeRequired)
+            {
+                Device.BeginInvokeOnMainThread(CancelOrOffloadOntoDevice);
+            }
+            else
+            {
+                CancelOrOffloadOntoDevice();
+            }
+
+            finishedManualResetEvent.WaitOne();
         }
 
         public override void OnPageStarted(Android.Webkit.WebView view, string url, Bitmap favicon)
