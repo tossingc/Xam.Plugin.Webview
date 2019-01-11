@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using Xam.Plugin.WebView.Abstractions.Delegates;
 using Xam.Plugin.WebView.Abstractions.Enumerations;
 using Xam.Plugin.WebView.Abstractions.Models;
@@ -151,9 +152,47 @@ namespace Xam.Plugin.WebView.Abstractions
             set => SetValue(UseWideViewPortProperty, value);
         }
 
+        public Rectangle? SelectionClientBoundingRectangle
+        {
+            get => (Rectangle?)GetValue(SelectionClientBoundingRectangleProperty);
+            set => SetValue(SelectionClientBoundingRectangleProperty, value);
+        }
+
         public FormsWebView()
         {
             HorizontalOptions = VerticalOptions = LayoutOptions.FillAndExpand;
+
+            AddLocalCallback("formsWebViewSelectionChanged", FormsWebViewSelectionChanged);
+        }
+
+        private void FormsWebViewSelectionChanged(string selectionRangeBoundingClientDomRectJson)
+        {
+            var selectionClientBoundingRectangle = GetRectangleFromDomRectJson(selectionRangeBoundingClientDomRectJson);
+
+            SelectionClientBoundingRectangle = selectionClientBoundingRectangle;
+        }
+
+        private static Rectangle? GetRectangleFromDomRectJson(string selectionRangeBoundingClientDOMRectJson)
+        {
+            if (selectionRangeBoundingClientDOMRectJson == null)
+            {
+                return null;
+            }
+
+            var selectionRangeBoundingClientDomRect =
+                JsonConvert.DeserializeObject<JObject>(selectionRangeBoundingClientDOMRectJson);
+
+            if (selectionRangeBoundingClientDomRect == null)
+            {
+                return null;
+            }
+
+            var selectionClientBoundingRectangle = new Rectangle(
+                (double)selectionRangeBoundingClientDomRect["left"],
+                (double)selectionRangeBoundingClientDomRect["top"],
+                (double)selectionRangeBoundingClientDomRect["width"],
+                (double)selectionRangeBoundingClientDomRect["height"]);
+            return selectionClientBoundingRectangle;
         }
 
         /// <summary>
@@ -274,8 +313,88 @@ namespace Xam.Plugin.WebView.Abstractions
             return handler;
         }
 
+        private const string AddOnSelectionChangeEventHandlerJavascript = @"
+            if (!window.hasRegisteredFormsWebViewOnSelectionChangeEventHandler) {
+
+		        window.getSelectionBoundingClientRectJson = function () {
+			        return JSON.stringify(window.getSelectionBoundingClientRect());
+		        };
+
+		        window.getSelectionBoundingClientRect = function () {
+			        var selection = window.getSelection();
+			        var selectionRange = selection.getRangeAt(0);
+                    var selectionRangeBoundingClientRect = selectionRange.getBoundingClientRect();
+                    
+			        if (selectionRangeBoundingClientRect.height > 0) {
+                        return selectionRangeBoundingClientRect;
+                    }
+
+				    // on iOS, getBoundingClientRect() on a range that is collapsed returns 0s for all values (Android does return the position, but we are reusing this code for both platforms for consistency)
+				    // this code approximates the bounding client rect when the selection range is collapsed (start and end position are the same)
+				    // under certain edge cases, it will return a rect that includes the previous and/or next lines
+
+				    selectionRange = selectionRange.cloneRange();
+
+				    // by definition, startContainer/endContainer and startOffset/endOffset are the same in this case
+				    // - selection start and end position are the same
+				    var cursorContainer = selectionRange.startContainer;
+				    var cursorOffset = selectionRange.startOffset;
+
+				    try {
+					    selectionRange.setStart(cursorContainer, cursorOffset - 1);
+				    } catch (e) { }
+				    try {
+					    selectionRange.setEnd(cursorContainer, cursorOffset + 1);
+				    } catch (e) { }
+
+                    selectionRangeBoundingClientRect = selectionRange.getBoundingClientRect();
+
+			        if (selectionRangeBoundingClientRect.height > 0) {
+                        return selectionRangeBoundingClientRect;
+                    }
+
+				    // if start and end position are the same after attempting to increase them, then this is an empty node
+				    // - just return the element's bounding client rect
+				    var anchorNode = selection.anchorNode;
+				    var anchorElement = anchorNode.getBoundingClientRect
+					    ? anchorNode
+					    : anchorNode.parentElement;
+				    selectionRangeBoundingClientRect = anchorElement.getBoundingClientRect();
+
+			        return selectionRangeBoundingClientRect;
+		        };
+
+                window.contentOnselectionchangeHandler = document.onselectionchange;
+
+	            document.onselectionchange = function () {
+                    try {
+                        var windowFormsWebViewSelectionChanged = window.formsWebViewSelectionChanged;
+		                if (windowFormsWebViewSelectionChanged == null) {
+			                return;
+		                }
+
+		                windowFormsWebViewSelectionChanged(window.getSelectionBoundingClientRectJson());
+                    }
+                    finally {
+                        var windowContentOnselectionchangeHandler = window.contentOnselectionchangeHandler;
+                        if (windowContentOnselectionchangeHandler == null) {
+                            return;
+                        }
+
+                        windowContentOnselectionchangeHandler();
+                    }
+	            };
+
+                window.hasRegisteredFormsWebViewOnSelectionChangeEventHandler = true;
+            }
+";
+
         internal void HandleNavigationCompleted(string uri)
         {
+#pragma warning disable 4014
+            InjectJavascriptAsync(AddOnSelectionChangeEventHandlerJavascript);
+#pragma warning restore 4014
+
             OnNavigationCompleted?.Invoke(this, uri);
         }
 
