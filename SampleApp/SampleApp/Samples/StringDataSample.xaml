@@ -5,6 +5,32 @@
              Title="String Data"
              x:Class="SampleApp.Samples.StringDataSample">
 
-    <webview:FormsWebView x:Name="stringContent" ContentType="StringData" />
+    <StackLayout>
+        <StackLayout
+            Orientation="Horizontal"
+            >
+            <Label
+                Text="Editable"
+                HorizontalOptions="FillAndExpand"
+                />
+            <Switch
+                IsToggled="True"
+
+                Toggled="Switch_OnToggled"
+                />
+        </StackLayout>
+        <Label
+            Text="{Binding
+                Source={x:Reference stringContent},
+                Path=SelectionClientBoundingRectangle,
+                StringFormat='Selection: {0}'
+            }"
+            />
+        <webview:FormsWebView
+            x:Name="stringContent"
+
+            ContentType="StringData"
+            />
+    </StackLayout>
 
 </ContentPage>
