@@ -1,4 +1,4 @@
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -331,79 +331,136 @@ namespace Xam.Plugin.WebView.Abstractions
         }
 
         private const string AddOnSelectionChangeEventHandlerJavascript = @"
-            if (!window.hasRegisteredFormsWebViewOnSelectionChangeEventHandler) {
 
-		        window.getSelectionBoundingClientRectJson = function () {
-			        return JSON.stringify(window.getSelectionBoundingClientRect());
-		        };
+if (!window.hasRegisteredFormsWebViewOnSelectionChangeEventHandler) {
 
-		        window.getSelectionBoundingClientRect = function () {
-			        var selection = window.getSelection();
-			        var selectionRange = selection.getRangeAt(0);
-                    var selectionRangeBoundingClientRect = selectionRange.getBoundingClientRect();
-                    
-			        if (selectionRangeBoundingClientRect.height > 0) {
-                        return selectionRangeBoundingClientRect;
-                    }
+window.getSelectionBoundingClientRectJson = function () {
+	return JSON.stringify(window.getSelectionBoundingClientRect());
+};
 
-				    // on iOS, getBoundingClientRect() on a range that is collapsed returns 0s for all values (Android does return the position, but we are reusing this code for both platforms for consistency)
-				    // this code approximates the bounding client rect when the selection range is collapsed (start and end position are the same)
-				    // under certain edge cases, it will return a rect that includes the previous and/or next lines
+window.getSelectionBoundingClientRect = function () {
 
-				    selectionRange = selectionRange.cloneRange();
+	var selection = window.getSelection();
+	var selectionRange = selection.getRangeAt(0);
 
-				    // by definition, startContainer/endContainer and startOffset/endOffset are the same in this case
-				    // - selection start and end position are the same
-				    var cursorContainer = selectionRange.startContainer;
-				    var cursorOffset = selectionRange.startOffset;
+	var anchorNode = selection.anchorNode;
+	var anchorParentElement = anchorNode.getBoundingClientRect
+		? anchorNode
+		: anchorNode.parentElement;
 
-				    try {
-					    selectionRange.setStart(cursorContainer, cursorOffset - 1);
-				    } catch (e) { }
-				    try {
-					    selectionRange.setEnd(cursorContainer, cursorOffset + 1);
-				    } catch (e) { }
+	if (selectionRange.collapsed) {
+		return window.getBoundingClientRectForCollapsedRange(selectionRange);
+	}
 
-                    selectionRangeBoundingClientRect = selectionRange.getBoundingClientRect();
+	var selectionRangeBoundingClientRect = selectionRange.getBoundingClientRect();
 
-			        if (selectionRangeBoundingClientRect.height > 0) {
-                        return selectionRangeBoundingClientRect;
-                    }
+	var startHandleSelectionRangeBoundingClientRect = 
+		window.getBoundingClientRectForContainerAndOffset(
+			selectionRange.startContainer,
+			selectionRange.startOffset
+		);
+	var endHandleSelectionRangeBoundingClientRect = 
+		window.getBoundingClientRectForContainerAndOffset(
+			selectionRange.endContainer,
+			selectionRange.endOffset
+		);
 
-				    // if start and end position are the same after attempting to increase them, then this is an empty node
-				    // - just return the element's bounding client rect
-				    var anchorNode = selection.anchorNode;
-				    var anchorElement = anchorNode.getBoundingClientRect
-					    ? anchorNode
-					    : anchorNode.parentElement;
-				    selectionRangeBoundingClientRect = anchorElement.getBoundingClientRect();
+	// this accounts for the case where the selection ends up much larger than it should be (mostly seen with tables)
+	// where selection includes all of table bounds when we are selecting a character in the middle of the table
+	var selectionStartHandleTop = Math.min(
+		startHandleSelectionRangeBoundingClientRect.top,
+		endHandleSelectionRangeBoundingClientRect.top
+	);
+	if (selectionRangeBoundingClientRect.top != selectionStartHandleTop) {
+		selectionRangeBoundingClientRect.y = selectionStartHandleTop;
+	}
+	var selectionEndHandleBottom = Math.max(
+		endHandleSelectionRangeBoundingClientRect.bottom,
+		startHandleSelectionRangeBoundingClientRect.bottom
+	);
+	if (selectionRangeBoundingClientRect.bottom != selectionEndHandleBottom) {
+		selectionRangeBoundingClientRect.height = selectionEndHandleBottom - selectionStartHandleTop;
+	}
 
-			        return selectionRangeBoundingClientRect;
-		        };
+	return selectionRangeBoundingClientRect;
+};
 
-                window.contentOnselectionchangeHandler = document.onselectionchange;
+window.getBoundingClientRectForContainerAndOffset = function(container, offset) {
+	var range = document.createRange();
+	range.setStart(container, offset);
+	range.setEnd(container, offset);
 
-	            document.onselectionchange = function () {
-                    try {
-                        var windowFormsWebViewSelectionChanged = window.formsWebViewSelectionChanged;
-		                if (windowFormsWebViewSelectionChanged == null) {
-			                return;
-		                }
+	return window.getBoundingClientRectForCollapsedRange(range);
+}
 
-		                windowFormsWebViewSelectionChanged(window.getSelectionBoundingClientRectJson());
-                    }
-                    finally {
-                        var windowContentOnselectionchangeHandler = window.contentOnselectionchangeHandler;
-                        if (windowContentOnselectionchangeHandler == null) {
-                            return;
-                        }
+window.getBoundingClientRectForCollapsedRange = function(range) {
+	var rangeBoundingClientRect;
 
-                        windowContentOnselectionchangeHandler();
-                    }
-	            };
+	var container = range.startContainer;
+	var offset = range.startOffset;
 
-                window.hasRegisteredFormsWebViewOnSelectionChangeEventHandler = true;
-            }
+	// on iOS, getBoundingClientRect() on a range that is collapsed returns 0s for all values (Android does return the position, but we are reusing this code for both platforms for consistency)
+	// this code approximates the bounding client rect when the selection range is collapsed (start and end position are the same)
+	// under certain edge cases, it will return a rect that includes the previous and/or next lines
+	var clonedRange = range.cloneRange();
+
+	try {
+		clonedRange.setStart(container, offset - 1);
+	} catch (e) { }
+	try {
+		clonedRange.setEnd(container, offset + 1);
+	} catch (e) { }
+
+	if (clonedRange.collapsed === false) {
+		
+		rangeBoundingClientRect = clonedRange.getBoundingClientRect();
+
+		if (!(rangeBoundingClientRect.x==0 &&
+			  rangeBoundingClientRect.y==0 &&
+			  rangeBoundingClientRect.width==0 &&
+			  rangeBoundingClientRect.height==0)) {
+			return rangeBoundingClientRect;
+		}
+	}
+
+	clonedRange = range.cloneRange();
+	var newSpan = document.createElement('span');
+	newSpan.appendChild(document.createTextNode('.'));
+	clonedRange.insertNode(newSpan);
+	var boundingClientRect5 = clonedRange.getBoundingClientRect();
+	newSpan.remove();
+	return boundingClientRect5;
+}
+
+window.contentOnselectionchangeHandler = document.onselectionchange;
+
+document.onselectionchange = function () {
+	try {
+		var windowFormsWebViewSelectionChanged = window.formsWebViewSelectionChanged;
+		if (windowFormsWebViewSelectionChanged == null) {
+			return;
+		}
+
+		windowFormsWebViewSelectionChanged(window.getSelectionBoundingClientRectJson());
+	}
+	finally {
+		var windowContentOnselectionchangeHandler = window.contentOnselectionchangeHandler;
+		if (windowContentOnselectionchangeHandler == null) {
+			return;
+		}
+
+		windowContentOnselectionchangeHandler();
+	}
+};
+
+document.onkeyup = function() {
+	if (document.onselectionchange) {
+		document.onselectionchange();
+	}
+};
+
+    window.hasRegisteredFormsWebViewOnSelectionChangeEventHandler = true;
+}
 ";
 
         internal void HandleNavigationCompleted(string uri)
