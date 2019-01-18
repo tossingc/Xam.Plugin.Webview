@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using Xam.Plugin.WebView.Abstractions.Delegates;
@@ -159,13 +158,6 @@ namespace Xam.Plugin.WebView.Abstractions
             set => SetValue(SelectionClientBoundingRectangleProperty, value);
         }
 
-        private static SemaphoreSlim InjectJavascriptAsyncSynchronizationSemaphoreSlim { get; }
-
-        static FormsWebView()
-        {
-            InjectJavascriptAsyncSynchronizationSemaphoreSlim = new SemaphoreSlim(1, 1);
-        }
-
         public FormsWebView()
         {
             HorizontalOptions = VerticalOptions = LayoutOptions.FillAndExpand;
@@ -246,21 +238,12 @@ namespace Xam.Plugin.WebView.Abstractions
         /// <returns>A valid string response or string.Empty</returns>
         public async Task<string> InjectJavascriptAsync(string js)
         {
-            try
-            {
-                await InjectJavascriptAsyncSynchronizationSemaphoreSlim.WaitAsync();
+            if (string.IsNullOrWhiteSpace(js)) return string.Empty;
 
-                if (string.IsNullOrWhiteSpace(js)) return string.Empty;
+            if (OnJavascriptInjectionRequest != null)
+                return await OnJavascriptInjectionRequest.Invoke(js);
 
-                if (OnJavascriptInjectionRequest != null)
-                    return await OnJavascriptInjectionRequest.Invoke(js);
-
-                return string.Empty;
-            }
-            finally
-            {
-                InjectJavascriptAsyncSynchronizationSemaphoreSlim.Release();
-            }
+            return string.Empty;
         }
 
         /// <summary>
